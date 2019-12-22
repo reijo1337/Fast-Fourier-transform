@@ -46,7 +46,7 @@ void fft(vector<base>& a, bool invert)
 }
 int main()
 {
-    vector<base> a{ 1, 2, 6, 24, 120 };
+    vector<base> a{ 1, 2, 6, 24 };
     fft(a, false);
     for (auto elem : a) {
         std::cout << "result" << elem << std::endl;
