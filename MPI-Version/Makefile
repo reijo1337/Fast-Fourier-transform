@@ -1,5 +1,5 @@
 build:
 	mpicc -cc=g++ main.cpp
 
-run:build
+run:
 	mpirun -n 4 ./a.out

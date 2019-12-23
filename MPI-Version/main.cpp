@@ -56,27 +56,20 @@ int main(int argc, char **argv)
     int numNumbers = pow(2, 20);
     int numTries = 100;
     vector<base> polynomial, original;
-    
+
     if (rank == 0) {
         for (int i = 0; i < numNumbers; ++i) {
-            original.push_back(rand() % 100);
+            polynomial.push_back(rand() % 100);
         }
+    } else {
+        polynomial.resize(numNumbers);
     }
 
 
     // FFT
     double starttime=MPI_Wtime();
-    double endtime;
 
     for (int iter = 0; iter < numTries; iter++) {
-
-        if (rank == 0) {
-            polynomial = original;
-        } else {
-            polynomial.clear();
-            polynomial.resize(numNumbers);
-        }
-    
         MPI_Bcast(&polynomial.front(), polynomial.size(), MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
 
         int n = static_cast<int>(polynomial.size());
@@ -135,10 +128,9 @@ int main(int argc, char **argv)
                     }
                 }
             }
-            endtime = MPI_Wtime();
-            std::cout << "Iteration num " << iter << ". Elapsed " << (endtime-starttime)*1000 << "ms" << std::endl;
         } 
     }
+    double endtime = MPI_Wtime();
     if (rank == 0) {
         std::cout << "Average time ms for " << numTries << " tries ";
         std::cout << 1.0 * (endtime-starttime)*1000 / (1.0 * numTries) << "ms" << std::endl;
