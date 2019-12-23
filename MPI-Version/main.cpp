@@ -50,24 +50,99 @@ int main(int argc, char **argv)
     int rank,size;
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-    std::cout << rank << std::endl;
-    int numNumbers = pow(2, 2);
+
+	MPI_Status status;
+
+    int numNumbers = pow(2, 20);
     int numTries = 100;
-    vector<base> polynomial;
+    vector<base> polynomial, original;
     
     if (rank == 0) {
         for (int i = 0; i < numNumbers; ++i) {
-            polynomial.push_back(rand() % 100);
+            original.push_back(rand() % 100);
         }
-    } else {
-        polynomial.resize(numNumbers);
     }
-    std::cout << polynomial.size() * sizeof(decltype(polynomial)::value_type) << std::endl;
-    MPI_Bcast(&polynomial.front(), polynomial.size() * sizeof(decltype(polynomial)::value_type), MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
 
-    for (auto elem : polynomial) {
-        std::cout << "rank: " << rank << " result: " << elem << std::endl;
+
+    // FFT
+    double starttime=MPI_Wtime();
+    double endtime;
+
+    for (int iter = 0; iter < numTries; iter++) {
+
+        if (rank == 0) {
+            polynomial = original;
+        } else {
+            polynomial.clear();
+            polynomial.resize(numNumbers);
+        }
+    
+        MPI_Bcast(&polynomial.front(), polynomial.size(), MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
+
+        int n = static_cast<int>(polynomial.size());
+        int lg_n = 0;
+        while ((1 << lg_n) < n)
+            ++lg_n;
+        if (rank == 0) {
+            for (int i = 0; i < n; ++i)
+                if (i < rev(i, lg_n))
+                    swap(polynomial[i], polynomial[rev(i, lg_n)]);
+        }
+
+        int degreeOfPolynomial = ceil(log2(n));
+        int numParalleIterations = degreeOfPolynomial - ceil(log2(size));
+        int partSize = n / size;
+
+        for (int z = 0; z < numParalleIterations; ++z) {
+            int len = pow(2, z + 1);
+            double ang = 2 * M_PI / len;
+            base wlen(cos(ang), sin(ang));
+            for (int i = 0; i < n; i += len) {
+                base w(1);
+                for (int j = 0; j < len / 2; ++j) {
+                    int first = i+j, second = i + j + len / 2;
+                    if ((partSize*rank <= first < partSize*(rank+1)) && (partSize*rank <= second < partSize*(rank+1))) {
+                        base u = polynomial[first], v = polynomial[second] * w;
+                        polynomial[first] = u + v;
+                        polynomial[second] = u - v;
+                    }
+
+                    w *= wlen;
+                }
+            }
+        }
+
+        if (rank == 0) {
+            for (int i = 1; i < size; i++) {
+                MPI_Recv(&polynomial[i*partSize], partSize, MPI_C_DOUBLE_COMPLEX, i, 42, MPI_COMM_WORLD, &status);
+            }
+        } else {
+            MPI_Send(&polynomial[rank*partSize], partSize, MPI_C_DOUBLE_COMPLEX, 0, 42, MPI_COMM_WORLD);
+        }
+
+        if (rank == 0) {
+            for (int z = numParalleIterations; z < degreeOfPolynomial; ++z) {
+                int len = pow(2, z + 1);
+                double ang = 2 * M_PI / len;
+                base wlen(cos(ang), sin(ang));
+                for (int i = 0; i < n; i += len) {
+                    base w(1);
+                    for (int j = 0; j < len / 2; ++j) {
+                        base u = polynomial[i + j], v = polynomial[i + j + len / 2] * w;
+                        polynomial[i + j] = u + v;
+                        polynomial[i + j + len / 2] = u - v;
+                        w *= wlen;
+                    }
+                }
+            }
+            endtime = MPI_Wtime();
+            std::cout << "Iteration num " << iter << ". Elapsed " << (endtime-starttime)*1000 << "ms" << std::endl;
+        } 
     }
-    MPI_Barrier(MPI_COMM_WORLD);
+    if (rank == 0) {
+        std::cout << "Average time ms for " << numTries << " tries ";
+        std::cout << 1.0 * (endtime-starttime)*1000 / (1.0 * numTries) << "ms" << std::endl;
+    }
     MPI_Finalize();
+    return 0;
 }
