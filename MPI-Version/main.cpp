@@ -63,11 +63,11 @@ int main(int argc, char **argv)
         polynomial.resize(numNumbers);
     }
     std::cout << polynomial.size() * sizeof(decltype(polynomial)::value_type) << std::endl;
-    MPI_Barrier(MPI_COMM_WORLD);
-    MPI_Bcast(polynomial.data(), polynomial.size() * sizeof(decltype(polynomial)::value_type), MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
-    MPI_Barrier(MPI_COMM_WORLD);
+    MPI_Bcast(&polynomial.front(), polynomial.size() * sizeof(decltype(polynomial)::value_type), MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
+
     for (auto elem : polynomial) {
         std::cout << "rank: " << rank << " result: " << elem << std::endl;
     }
+    MPI_Barrier(MPI_COMM_WORLD);
     MPI_Finalize();
 }
