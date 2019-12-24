@@ -61,15 +61,9 @@ int main(int argc, char **argv)
 
     // FFT
     double total = 0;
-    double totalBCast = 0;
-    double totalRecv = 0;
-    double totalLast = 0;
 
     for (int iter = 0; iter < numTries; iter++) {
-        double startBCast = MPI_Wtime();
         MPI_Bcast(&polynomial.front(), polynomial.size(), MPI_C_DOUBLE_COMPLEX, 0, MPI_COMM_WORLD);
-        double endBCast = MPI_Wtime();
-        totalBCast += (endBCast - startBCast) * 1000;
 
         int n = static_cast<int>(polynomial.size());
         int lg_n = 0;
@@ -86,12 +80,26 @@ int main(int argc, char **argv)
         int partSize = n / size;
         
         double starttime=MPI_Wtime();
+        int offset = 1;
         for (int z = 0; z < numParalleIterations; ++z) {
-            int len = pow(2, z + 1);
-            double ang = 2 * M_PI / len;
-            base wlen(cos(ang), sin(ang));
-            base w(1);
-            for (int offset = 1; offset < partSize; offset *= 2) {
+            for (int i = partSize*rank; i < partSize / 2; i++) {
+                int ti = 0;
+                base w = wTab[ti];
+                base u = polynomial[i], v = polynomial[i + offset] * w;
+                polynomial[i] = u + v;
+                polynomial[i+offset] = u - v;
+            }
+            offset *= 2;
+        }
+
+        int offsetMax = ceil(pow(2, degreeOfPolynomial-1));
+        for (;offset <= offsetMax;) {
+            int flag = offset / partSize;
+            int rankToSwap;
+            if ((rank / flag) % 2 == 0 ) {
+                rankToSwap = rank + flag;
+                MPI_Send(&polynomial[rank*partSize + partSize / 2], partSize / 2, MPI_C_DOUBLE_COMPLEX, rankToSwap, 1337, MPI_COMM_WORLD);
+                MPI_Recv(&polynomial[rankToSwap*partSize], partSize / 2, MPI_C_DOUBLE_COMPLEX, rankToSwap, 1337, MPI_COMM_WORLD, &status);
                 for (int i = partSize*rank; i < partSize / 2; i++) {
                     int ti = 0;
                     base w = wTab[ti];
@@ -99,48 +107,34 @@ int main(int argc, char **argv)
                     polynomial[i] = u + v;
                     polynomial[i+offset] = u - v;
                 }
+            } else {
+                rankToSwap = rank - flag;
+                MPI_Recv(&polynomial[rankToSwap*partSize + partSize / 2], partSize / 2, MPI_C_DOUBLE_COMPLEX, rankToSwap, 1337, MPI_COMM_WORLD, &status);
+                MPI_Send(&polynomial[rank*partSize], partSize / 2, MPI_C_DOUBLE_COMPLEX, rankToSwap, 1337, MPI_COMM_WORLD);
+                for (int i = partSize*rank + partSize / 2; i < partSize; i++) {
+                    int ti = 0;
+                    base w = wTab[ti];
+                    base u = polynomial[i - offset], v = polynomial[i] * w;
+                    polynomial[i-offset] = u + v;
+                    polynomial[i] = u - v;
+                }
             }
+            offset *= 2;
         }
 
         if (rank == 0) {
-            double startRecv = MPI_Wtime();
             for (int i = 1; i < size; i++) {
                 MPI_Recv(&polynomial[i*partSize], partSize, MPI_C_DOUBLE_COMPLEX, i, 42, MPI_COMM_WORLD, &status);
             }
-            double endRecv = MPI_Wtime();
-            totalRecv += (endRecv - startRecv) * 1000;
         } else {
             MPI_Send(&polynomial[rank*partSize], partSize, MPI_C_DOUBLE_COMPLEX, 0, 42, MPI_COMM_WORLD);
         }
-
-        if (rank == 0) {
-            double startLast = MPI_Wtime();
-            for (int z = numParalleIterations; z < degreeOfPolynomial; ++z) {
-                int len = pow(2, z + 1);
-                double ang = 2 * M_PI / len;
-                base wlen(cos(ang), sin(ang));
-                for (int i = 0; i < n; i += len) {
-                    base w(1);
-                    for (int j = 0; j < len / 2; ++j) {
-                        base u = polynomial[i + j], v = polynomial[i + j + len / 2] * w;
-                        polynomial[i + j] = u + v;
-                        polynomial[i + j + len / 2] = u - v;
-                        w *= wlen;
-                    }
-                }
-            }
-            double endLast = MPI_Wtime();
-            totalLast += (endLast - startLast) * 1000;
-        } 
         double endtime = MPI_Wtime();
         total += (endtime - starttime) * 1000;
     }
     if (rank == 0) {
         std::cout << "Average time ms for " << numTries << " tries ";
         std::cout << total / (1.0 * numTries) << "ms" << std::endl;
-        std::cout << "Average BCast: " << totalBCast / (1.0 * numTries) << "ms" << std::endl;
-        std::cout << "Average Recv: " << totalRecv / (1.0 * numTries) << "ms" << std::endl;
-        std::cout << "Average Last: " << totalLast / (1.0 * numTries) << "ms" << endl;
     }
     MPI_Finalize();
     return 0;
