@@ -16,34 +16,26 @@ int rev(int num, int lg_n)
     return res;
 }
 
-void fft(vector<base>& a, bool invert)
+vector<base> initWtable( int number_of_samples)
 {
-    int n = (int)a.size();
-    int lg_n = 0;
-    while ((1 << lg_n) < n)
-        ++lg_n;
-
-    for (int i = 0; i < n; ++i)
-        if (i < rev(i, lg_n))
-            swap(a[i], a[rev(i, lg_n)]);
-
-    for (int len = 2; len <= n; len <<= 1) {
-        double ang = 2 * M_PI / len * (invert ? -1 : 1);
+    vector<base> W;
+    for (int z = 0; z < ceil(log2(number_of_samples)); ++z) {
+        int len = pow(2, z + 1);
+        double ang = 2 * M_PI / len;
         base wlen(cos(ang), sin(ang));
-        for (int i = 0; i < n; i += len) {
+        for (int i = 0; i < number_of_samples; i += len) {
             base w(1);
             for (int j = 0; j < len / 2; ++j) {
-                base u = a[i + j], v = a[i + j + len / 2] * w;
-                a[i + j] = u + v;
-                a[i + j + len / 2] = u - v;
+                W.push_back(w);
                 w *= wlen;
             }
         }
     }
-    if (invert)
-        for (int i = 0; i < n; ++i)
-            a[i] /= n;
+
+    return W;
 }
+
+
 int main(int argc, char **argv)
 {
     MPI_Init(&argc, &argv);
@@ -65,6 +57,7 @@ int main(int argc, char **argv)
         polynomial.resize(numNumbers);
     }
 
+    vector<base> wTab = initWtable(numNumbers);
 
     // FFT
     double total = 0;
@@ -100,6 +93,8 @@ int main(int argc, char **argv)
             base w(1);
             for (int offset = 1; offset < partSize; offset *= 2) {
                 for (int i = partSize*rank; i < partSize / 2; i++) {
+                    int ti = 0;
+                    base w = wTab[ti];
                     base u = polynomial[i], v = polynomial[i + offset] * w;
                     polynomial[i] = u + v;
                     polynomial[i+offset] = u - v;
